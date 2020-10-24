@@ -1,0 +1,42 @@
+{
+  "title": "CheerioCrawler Template",
+  "description": "Supply either taskId/actorId or direct runIds/URLs to log text files",
+  "type": "object",
+  "schemaVersion": 1,
+  "properties": {
+      "runIdsOrUrls": {
+        "title": "Rud IDs (or text file ULRs)",
+        "type": "array",
+        "description": "List of runs to check. Also can be URLs to any text files.",
+        "editor": "stringList",
+        "prefill": ["ILnaIxL36Qd9tLgUh", "https://api.apify.com/v2/logs/ILnaIxL36Qd9tLgUh"]
+      },
+      "regexes": {
+        "title": "Matching regexes",
+        "type": "array",
+        "description": "List of regexes to match on each line of the text. Can be in plain string format (Error) or in regex format that allows regex flags (/error/i)",
+        "editor": "stringList",
+        "prefill": ["Error"]
+      },
+      "actorOrTaskId": {
+        "title": "Actor or task ID",
+        "type": "string",
+        "description": "Actor or task ID",
+        "editor": "textfield",
+        "sectionCaption": "Scan actor or task",
+        "sectionDescription": "Provide an ID of an actor or task. All runs of that actor or task will be scanned. Optionally you can restrict the date when the runs started."
+      },
+      "dateFrom": {
+        "title": "Date from",
+        "type": "string",
+        "description": "Optional date to limit from which date the run will be scanned. The date should be in ISO standard (e.g. 2020-10-01)",
+        "editor": "textfield"
+      },
+      "dateTo": {
+        "title": "Date to",
+        "type": "string",
+        "description": "Optional date to limit to which date the run will be scanned. The date should be in ISO standard (e.g. 2020-10-15)",
+        "editor": "textfield"
+      }
+  }
+}
