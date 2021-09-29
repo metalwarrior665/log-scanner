@@ -16,9 +16,7 @@ Apify.main(async () => {
         token,
     } = input;
 
-    if (token) {
-        Apify.client.setOptions({ token });
-    }
+    const client = Apify.newClient({ token });
 
     const parsedRegexes = regexes.map((str) => {
         // str can be plain string or wrapped in /str/g or similar
@@ -30,75 +28,80 @@ Apify.main(async () => {
         return new RegExp(regexBody, flags);
     });
 
-    // Test if the provided ID is actor or task or crash
-    let isActor = true;
-    try {
-        await Apify.client.acts.getAct({ actId: actorOrTaskId, userId: 'xgD4TryiQ6GgcfkNo' });
-    } catch (e) {
-        // actor not found, it is a task
-        isActor = false;
-        try {
-            await Apify.client.tasks.getTask({ taskId: actorOrTaskId, userId: 'xgD4TryiQ6GgcfkNo' });
-        } catch (e) {
-            throw 'Cannot load actor or task with the specified ID, is your ID correct?';
-        }
-    }
-
-    let listRunsOptions;
-    if (isActor) {
-        listRunsOptions = {
-            namespace: 'acts',
-            callOptions: { actId: actorOrTaskId },
-        };
-    } else {
-        listRunsOptions = {
-            namespace: 'tasks',
-            callOptions: { taskId: actorOrTaskId },
-        };
-    }
-
+    // Runs to scan
     const sources = [];
 
-    if (listRunsOptions) {
-        let allRuns = [];
-
-        // TODO: Only load runs necessary for the time range
-        let offset = 0;
-        const limit = 1000;
-        while (true) {
-            const { items } = await Apify.client[listRunsOptions.namespace]
-                .listRuns({ ...listRunsOptions.callOptions, offset, limit });
-            allRuns = allRuns.concat(items);
-            const doStop = items.length < 1000;
-            log.info(`Loaded ${items.length} runs with offset ${offset}, ${doStop ? 'Loading finished' : 'Loading next batch'}`);
-            if (doStop) {
-                break;
+    if (actorOrTaskId) {
+        // TODO: Refactor this
+        // Test if the provided ID is actor or task or crash
+        let isActor = true;
+        try {
+            await client.actor(actorOrTaskId).get();
+        } catch (e) {
+            // actor not found, it is a task
+            isActor = false;
+            try {
+                await client.task(actorOrTaskId).get();
+            } catch (e) {
+                throw 'Cannot load actor or task with the specified ID, is your ID correct?';
             }
-
-            offset += limit;
         }
-        log.info(`Total loaded runs: ${allRuns.length}`);
 
-        const filteredRuns = allRuns.filter((run) => {
-            const { startedAt } = run;
-            const fitsDateFrom = dateFrom ? new Date(startedAt) >= new Date(dateFrom) : true;
-            const fitsDateTo = dateTo ? new Date(startedAt) <= new Date(dateTo) : true;
-            if (fitsDateFrom && fitsDateTo) {
-                return true;
+        let listRunsOptions;
+        if (isActor) {
+            listRunsOptions = {
+                namespace: 'actor',
+                id: actorOrTaskId,
+            };
+        } else {
+            listRunsOptions = {
+                namespace: 'task',
+                id: actorOrTaskId,
+            };
+        }
+    
+
+        if (listRunsOptions) {
+            let allRuns = [];
+
+            // TODO: Only load runs necessary for the time range
+            let offset = 0;
+            const limit = 1000;
+            while (true) {
+                const { items } = await client[listRunsOptions.namespace](listRunsOptions.id)
+                    .runs({ offset, limit });
+                allRuns = allRuns.concat(items);
+                const doStop = items.length < 1000;
+                log.info(`Loaded ${items.length} runs with offset ${offset}, ${doStop ? 'Loading finished' : 'Loading next batch'}`);
+                if (doStop) {
+                    break;
+                }
+
+                offset += limit;
             }
-        });
+            log.info(`Total loaded runs: ${allRuns.length}`);
 
-        log.info(`Runs that fit into dates: ${filteredRuns.length}`);
-        for (const run of filteredRuns) {
-            sources.push({
-                url: 'http://example.com',
-                uniqueKey: run.id,
-                userData: {
-                    idOrUlr: run.id,
-                    startedAt: run.startedAt,
-                    finishedAt: run.finishedAt,
-                },
+            const filteredRuns = allRuns.filter((run) => {
+                const { startedAt } = run;
+                const fitsDateFrom = dateFrom ? new Date(startedAt) >= new Date(dateFrom) : true;
+                const fitsDateTo = dateTo ? new Date(startedAt) <= new Date(dateTo) : true;
+                if (fitsDateFrom && fitsDateTo) {
+                    return true;
+                }
             });
+
+            log.info(`Runs that fit into dates: ${filteredRuns.length}`);
+            for (const run of filteredRuns) {
+                sources.push({
+                    url: 'http://example.com',
+                    uniqueKey: run.id,
+                    userData: {
+                        idOrUlr: run.id,
+                        startedAt: run.startedAt,
+                        finishedAt: run.finishedAt,
+                    },
+                });
+            }
         }
     }
 
@@ -127,7 +130,7 @@ Apify.main(async () => {
                 const { body } = await Apify.utils.requestAsBrowser({ url: idOrUlr });
                 logText = body.toString();
             } else {
-                logText = await Apify.client.logs.getLog({ logId: idOrUlr });
+                logText = await client.log(idOrUlr).get();
             }
 
             if (typeof logText !== 'string') {
