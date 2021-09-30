@@ -32,77 +32,79 @@ Apify.main(async () => {
     const sources = [];
 
     if (actorOrTaskId) {
-        // TODO: Refactor this
         // Test if the provided ID is actor or task or crash
-        let isActor = true;
+        let clientConfig;
         try {
             await client.actor(actorOrTaskId).get();
+            log.info(`Provided actorOrTaskId is an actor, will scan it's runs`);
+            clientConfig = {
+                namespace: 'actor',
+                id: actorOrTaskId,
+            };
         } catch (e) {
             // actor not found, it is a task
             isActor = false;
             try {
                 await client.task(actorOrTaskId).get();
+                log.info(`Provided actorOrTaskId is a task, will scan it's runs`);
+                clientConfig = {
+                    namespace: 'task',
+                    id: actorOrTaskId,
+                };
             } catch (e) {
                 throw 'Cannot load actor or task with the specified ID, is your ID correct?';
             }
-        }
+        }    
 
-        let listRunsOptions;
-        if (isActor) {
-            listRunsOptions = {
-                namespace: 'actor',
-                id: actorOrTaskId,
-            };
-        } else {
-            listRunsOptions = {
-                namespace: 'task',
-                id: actorOrTaskId,
-            };
-        }
-    
+        
+        let allRuns = [];
 
-        if (listRunsOptions) {
-            let allRuns = [];
-
-            // TODO: Only load runs necessary for the time range
-            let offset = 0;
-            const limit = 1000;
-            while (true) {
-                const { items } = await client[listRunsOptions.namespace](listRunsOptions.id)
-                    .runs({ offset, limit });
-                allRuns = allRuns.concat(items);
-                const doStop = items.length < 1000;
-                log.info(`Loaded ${items.length} runs with offset ${offset}, ${doStop ? 'Loading finished' : 'Loading next batch'}`);
-                if (doStop) {
-                    break;
-                }
-
-                offset += limit;
+        // TODO: Only load runs necessary for the time range
+        let offset = 0;
+        const limit = 1000;
+        for (;;) {
+            const { items } = await client[clientConfig.namespace](clientConfig.id)
+                .runs().list({ offset, limit });
+            allRuns = allRuns.concat(items);
+            const doStop = items.length < 1000;
+            log.info(`Loaded ${items.length} runs with offset ${offset}, ${doStop ? 'Loading finished' : 'Loading next batch'}`);
+            if (doStop) {
+                break;
             }
-            log.info(`Total loaded runs: ${allRuns.length}`);
 
-            const filteredRuns = allRuns.filter((run) => {
-                const { startedAt } = run;
-                const fitsDateFrom = dateFrom ? new Date(startedAt) >= new Date(dateFrom) : true;
-                const fitsDateTo = dateTo ? new Date(startedAt) <= new Date(dateTo) : true;
-                if (fitsDateFrom && fitsDateTo) {
-                    return true;
-                }
+            offset += limit;
+        }
+        log.info(`Total loaded runs: ${allRuns.length}`);
+
+        const dateFromAsDate = dateFrom ? new Date(dateFrom) : null;
+        const dateToAsDate = dateTo ? new Date(dateTo) : null;
+        log.info(`From date: ${dateFromAsDate}, to date: ${dateToAsDate}`);
+
+        const filteredRuns = allRuns.filter((run) => {
+            const { startedAt } = run;
+            const fitsDateFrom = dateFrom ? startedAt >= dateFromAsDate : true;
+            const fitsDateTo = dateTo ? startedAt <= dateToAsDate : true;
+            if (fitsDateFrom && fitsDateTo) {
+                log.info(`Run startedAt ${startedAt} fits into the chosen date and will be scanned`);
+                return true;
+            } else {
+                log.info(`Run startedAt ${startedAt} doesn't fit into the chosen date and will not be scanned`);
+            }
+        });
+
+        log.info(`Runs that fit into dates: ${filteredRuns.length}`);
+        for (const run of filteredRuns) {
+            sources.push({
+                url: 'http://example.com',
+                uniqueKey: run.id,
+                userData: {
+                    idOrUlr: run.id,
+                    startedAt: run.startedAt,
+                    finishedAt: run.finishedAt,
+                },
             });
-
-            log.info(`Runs that fit into dates: ${filteredRuns.length}`);
-            for (const run of filteredRuns) {
-                sources.push({
-                    url: 'http://example.com',
-                    uniqueKey: run.id,
-                    userData: {
-                        idOrUlr: run.id,
-                        startedAt: run.startedAt,
-                        finishedAt: run.finishedAt,
-                    },
-                });
-            }
         }
+        
     }
 
     for (const runIdOrUrl of runIdsOrUrls) {
