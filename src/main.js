@@ -34,28 +34,27 @@ Apify.main(async () => {
     if (actorOrTaskId) {
         // Test if the provided ID is actor or task or crash
         let clientConfig;
-        try {
-            await client.actor(actorOrTaskId).get();
+        
+        const actor = await client.actor(actorOrTaskId).get();
+        if (actor) {
             log.info(`Provided actorOrTaskId is an actor, will scan it's runs`);
             clientConfig = {
                 namespace: 'actor',
                 id: actorOrTaskId,
             };
-        } catch (e) {
+        } else {
             // actor not found, it is a task
             isActor = false;
-            try {
-                await client.task(actorOrTaskId).get();
-                log.info(`Provided actorOrTaskId is a task, will scan it's runs`);
-                clientConfig = {
-                    namespace: 'task',
-                    id: actorOrTaskId,
-                };
-            } catch (e) {
-                throw 'Cannot load actor or task with the specified ID, is your ID correct?';
+            const task = await client.task(actorOrTaskId).get();
+            if (!task) {
+                throw `Cannot load actor or task with the specified ID ${actorOrTaskId}, is this ID correct?`;
             }
-        }    
-
+            log.info(`Provided actorOrTaskId is a task, will scan it's runs`);
+            clientConfig = {
+                namespace: 'task',
+                id: actorOrTaskId,
+            };
+        }
         
         let allRuns = [];
 
@@ -104,7 +103,6 @@ Apify.main(async () => {
                 },
             });
         }
-        
     }
 
     for (const runIdOrUrl of runIdsOrUrls) {
